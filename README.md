@@ -1,117 +1,130 @@
-[![go](https://github.com/khatibomar/migoku/actions/workflows/go.yml/badge.svg)](https://github.com/khatibomar/migoku/actions/workflows/go.yml)
+# migaku-notion
 
-# Migoku
+GitHub fork of [khatibomar/migoku](https://github.com/khatibomar/migoku): the repo root is the same Go migoku service (Docker, `localhost` REST API). The `sync/` directory adds a Python tool that mirrors your [Migaku](https://migaku.com) vocabulary into a Notion database (SQLite diff cache, pinyin for Mandarin).
 
-A Go HTTP server that provides REST API access to Migaku's local IndexedDB data with browser automation and caching.
+This fork keeps upstream history and the fork network so you can open PRs to migoku while shipping the Notion workflow in one place.
 
-**Note:** Migoku is an unofficial, community-made utility that enables API access to your Migaku data stored locally in your browser.
+Pure-Python successor (no Docker, no migoku): [migaku-notion-v2](https://github.com/gfsincere/migaku-notion-v2). v1 here still fits if you run migoku for reads.
 
-Main important information this API can return are bunch of statistics, and information about your decks.
-Like words you are learning and their metadata, etc...
+## Install
 
-> ⚠️ still in beta phase, I am doing some breaking changes from time to time
+```powershell
+git clone https://github.com/gfsincere/migaku-notion.git
+cd migaku-notion
+docker compose up -d
 
-## Why?
-
-At the moment of writing this project, Migaku doesn't officially support a way to access our own statistics through an API.
-So that's why I built this project as a way to have an API that we can build cool things with it, like
-
-<img width="559" height="869" alt="Image" src="https://github.com/user-attachments/assets/01ab7c28-0eb3-453f-84e5-a1e149640f4e" />
-
-## Prerequisites
-
-- Go
-
-## Quick Start
-
-```bash
-# Without container
-make run
-
-# With container
-make docker-run
+cd sync
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python sync.py setup
+python sync.py status
+python sync.py sync --dry-run
+python sync.py sync
 ```
 
-Server runs on `http://localhost:8080` with interactive API documentation at `/docs`.
+You need: Migaku account, Notion internal integration connected to a parent page, Docker, Python 3.11+, Git. `setup` writes `sync/.env` (do not commit secrets).
 
-OpenAPI spec is available at `/openapi.yaml`.
+## Fork-specific fixes
 
-## Configuration
+These are applied on top of upstream in this fork:
 
-Environment variables:
-- `PORT` - Server port (default: 8080)
-- `CORS_ORIGINS` - Allowed CORS origins (comma-separated, default: "*")
-- `API_SECRET` - Secret used to sign keys ( in case of comprimised key, change this and will generate new keys)
-- `CACHE_TTL` - Cache duration (default: 10s) this also interval to update database with migaku so the shorter it is the more accurate.
-- `LOG_LEVEL` - Log level: DEBUG, INFO, WARN, ERROR (default: INFO)
+| Change | Reason |
+|--------|--------|
+| `Dockerfile` | Removed invalid `COPY ... /app/example` (folder is `examples/`). |
+| `service.go` | Words cache key includes `limit` and `offset` so pagination is not wrong. |
 
-## Development
+Contributions that belong in core migoku should go to [khatibomar/migoku](https://github.com/khatibomar/migoku) as PRs when possible.
 
-```bash
-make run
-make build
-make clean
-make docker-run
+## What it does
+
+1. Pull words from migoku (language and status filters).
+2. Add tone-marked and numeric pinyin for Mandarin via `pypinyin`.
+3. Merge fail rates from migoku difficult-words API.
+4. Upsert rows in your Notion database.
+5. Keep `sync/state.db` so only changed rows get Notion PATCHes on the next run.
+
+Meaning column: yours to fill (e.g. Notion AI); sync does not overwrite it.
+
+## Architecture
+
+```
+                 Migaku (account data)
+                        │
+                        │  migoku logs in, downloads SRS DB
+                        ▼
+                 migoku (Go, this repo root, Docker)
+                 localhost:8080
+                        │
+                        │  REST: words, difficult, ...
+                        ▼
+              sync/sync.py (Python)
+                        │
+                        │  pinyin, merge stats, diff state.db
+                        ▼
+              Notion "Migaku Vocab" DB
 ```
 
-## Endpoints
+## Commands
 
-<!-- endpoints-start -->
+```powershell
+cd sync
+python sync.py status
+python sync.py sync
+python sync.py sync --full-refresh
+python sync.py sync --status ALL
+python sync.py sync --dry-run
+python sync.py rebuild-cache
+python sync.py chars
+python sync.py chars --list
+python sync.py export --csv vocab.csv
+python sync.py export --xlsx vocab.xlsx
+```
 
-| Method | Path | Summary | Tags |
-| --- | --- | --- | --- |
-| GET | /api/v1/decks | Get all active decks | Decks |
-| GET | /api/v1/stats/due | Get forecast of cards due per day for a given period | Stats |
-| GET | /api/v1/stats/intervals | Get distribution of card intervals | Stats |
-| GET | /api/v1/stats/study | Get study statistics over a time period | Stats |
-| GET | /api/v1/stats/words | Get aggregated word status counts for a language | Stats |
-| GET | /api/v1/status/counts | Get aggregated word status counts | Counts |
-| GET | /api/v1/words | Get words with optional filters | Words |
-| GET | /api/v1/words/difficult | Get words with highest fail rates | Words |
-| POST | /api/v1/words/status | Change a word status in Migaku | Words |
-| POST | /auth/login | Login and receive an API key | Auth |
-| POST | /auth/logout | Logout and close the client session | Auth |
-| POST | /dev/cache/clear | Clear the in-memory cache | Dev |
-| GET | /dev/database/schema | Get complete database schema | Dev |
-| GET | /dev/database/tables | List all database tables | Dev |
-| GET | /dev/status | Get server status and configuration | Dev |
+## Notion schema
 
-<!-- endpoints-end -->
+| Property | Type | Notes |
+|----------|------|--------|
+| Word | Title | dictForm |
+| Pinyin | Rich text | pypinyin for zh |
+| Pinyin (numeric) | Rich text | zh |
+| Meaning | Rich text | not overwritten by sync |
+| Status | Select | KNOWN, LEARNING, etc. |
+| Fail rate % | Number | from difficult list when present |
+| Total reviews | Number | |
+| Failed reviews | Number | |
+| Part of speech | Rich text | often from difficult list only |
+| Language | Select | |
+| Last synced | Date | |
+| Migaku key | Rich text | lang\|dictForm\|secondary |
+| Sense # | Rich text | zh sense index |
 
-## Upcoming
+## Limitations
 
-- rate limiting
-- more endpoints
-- refactoring
-- bug fixes as they occur
-- tests
+- migoku exposes words and stats, not full dictionary glosses in the list endpoint; Meaning stays in Notion.
+- Notion rate limit (~3 rps): first full sync of thousands of rows takes a while; later runs are fast thanks to `state.db`.
+- Migaku may change endpoints; v2 targets the newer API. v1 read path depends on what migoku still supports.
+
+## Troubleshooting
+
+| Issue | Fix |
+|-------|-----|
+| Docker build fails on `example` path | Use this fork or apply the Dockerfile fix locally. |
+| About half of words missing on sync | Use this fork or apply the words cache key fix in `service.go`. |
+| Notion 404 on database | Connect the integration to the parent page (Connections). |
+| Notion 401 | Check `NOTION_TOKEN` in `sync/.env`. |
 
 ## Credits
 
-Thanks to:
-- [https://github.com/SebastianGuadalupe/MigakuStats](https://github.com/SebastianGuadalupe/MigakuStats) I learned how Migaku works by reading the plugin.
-- waraki user on Discord for the decoding writing logic and login
+- [khatibomar/migoku](https://github.com/khatibomar/migoku)
+- [Migaku](https://migaku.com)
+- [pypinyin](https://github.com/mozillazg/python-pinyin)
+- [Notion](https://notion.so)
 
-And all of contributors to the repo.
-<!-- readme: contributors -start -->
-<table>
-	<tbody>
-		<tr>
-            <td align="center">
-                <a href="https://github.com/khatibomar">
-                    <img src="https://avatars.githubusercontent.com/u/35725554?v=4" width="100;" alt="khatibomar"/>
-                    <br />
-                    <sub><b>عين</b></sub>
-                </a>
-            </td>
-            <td align="center">
-                <a href="https://github.com/StayBlue">
-                    <img src="https://avatars.githubusercontent.com/u/23127866?v=4" width="100;" alt="StayBlue"/>
-                    <br />
-                    <sub><b>StayBlue</b></sub>
-                </a>
-            </td>
-		</tr>
-	<tbody>
-</table>
-<!-- readme: contributors -end -->
+## Support
+
+[ko-fi.com/blacktonystark](https://ko-fi.com/blacktonystark)
+
+## License
+
+MIT.

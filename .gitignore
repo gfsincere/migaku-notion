@@ -34,3 +34,24 @@ go.work.sum
 migoku
 bin
 .export
+
+# migaku-notion sync (Python)
+sync/.env
+sync/.venv/
+sync/__pycache__/
+sync/*.py[cod]
+sync/*.log
+sync/state.db
+sync/state.db-wal
+sync/state.db-shm
+sync/state.db-journal
+migoku-build.log
+
+# Local coordination notes (not for public repo)
+memory-bank/
+
+# Local editor metadata (never publish)
+.cursor/
+
+# Local conventions live in Documents\projects\ — never commit into repos
+AGENTS.md

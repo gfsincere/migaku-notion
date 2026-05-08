@@ -1,0 +1,6 @@
+requests>=2.32,<3
+python-dotenv>=1.0,<2
+pypinyin>=0.50,<1
+
+# For `python sync.py export --xlsx`. CSV uses stdlib only.
+openpyxl>=3.1,<4

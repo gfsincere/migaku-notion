@@ -168,6 +168,7 @@ func (s *MigakuService) GetWords(
 	} else {
 		cacheKey += lang
 	}
+	cacheKey += ":limit:" + strconv.Itoa(limit) + ":offset:" + strconv.Itoa(offset)
 	cacheKey = s.scopedCacheKey(client, cacheKey)
 
 	if cached, ok := s.cache.Get(cacheKey); ok {
